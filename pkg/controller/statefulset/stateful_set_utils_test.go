@@ -1510,6 +1510,53 @@ func TestNewPodControllerRef(t *testing.T) {
 	}
 }
 
+func TestApplyRevision(t *testing.T) {
+	set := newStatefulSet(1)
+	set.Namespace = "original-namespace"
+	set.UID = "original-uid"
+	set.Annotations = map[string]string{"original": "true"}
+	set.Status.ObservedGeneration = 5
+	collisionCount := int32(1)
+	set.Status.CollisionCount = &collisionCount
+
+	revisionSet := set.DeepCopy()
+	revisionSet.Kind = "NotAStatefulSet"
+	revisionSet.APIVersion = "v0fake"
+	revisionSet.Namespace = "revision-namespace"
+	revisionSet.UID = "revision-uid"
+	revisionSet.Annotations = map[string]string{"revision": "true"}
+	revisionSet.Status.ObservedGeneration = 100
+	revisionCollisionCount := int32(99)
+	revisionSet.Status.CollisionCount = &revisionCollisionCount
+	revisionSet.Spec.Template.Spec.Containers[0].Image = "nginx:latest"
+
+	raw, err := runtime.Encode(patchCodec, revisionSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := &apps.ControllerRevision{Data: runtime.RawExtension{Raw: raw}}
+	restoredSet, err := ApplyRevision(set, revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if restoredSet.Name != set.Name || restoredSet.Namespace != set.Namespace || restoredSet.UID != set.UID {
+		t.Errorf("revision metadata was applied: got name=%q namespace=%q uid=%q", restoredSet.Name, restoredSet.Namespace, restoredSet.UID)
+	}
+	if !reflect.DeepEqual(set.Annotations, restoredSet.Annotations) {
+		t.Errorf("revision annotations were applied: got %v, want %v", restoredSet.Annotations, set.Annotations)
+	}
+	if restoredSet.Kind != set.Kind || restoredSet.APIVersion != set.APIVersion {
+		t.Errorf("revision type metadata was applied: got %q/%q, want %q/%q", restoredSet.APIVersion, restoredSet.Kind, set.APIVersion, set.Kind)
+	}
+	if !reflect.DeepEqual(set.Status, restoredSet.Status) {
+		t.Errorf("revision status was applied: got %v, want %v", restoredSet.Status, set.Status)
+	}
+	if got := restoredSet.Spec.Template.Spec.Containers[0].Image; got != "nginx:latest" {
+		t.Errorf("revision spec was not applied: got image %q, want %q", got, "nginx:latest")
+	}
+}
+
 func TestCreateApplyRevision(t *testing.T) {
 	set := newStatefulSet(1)
 	set.Status.CollisionCount = new(int32)
