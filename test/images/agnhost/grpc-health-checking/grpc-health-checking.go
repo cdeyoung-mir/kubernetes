@@ -162,3 +162,6 @@ func main(cmd *cobra.Command, args []string) {
 
 	select {}
 }
+func (s *HealthChecker) List(ctx context.Context, _ *grpc_health_v1.HealthListRequest) (*grpc_health_v1.HealthListResponse, error) {
+	return &grpc_health_v1.HealthListResponse{}, nil
+}
